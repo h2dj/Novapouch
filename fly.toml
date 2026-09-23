@@ -1,0 +1,36 @@
+# Fly.io 배포 설정. 처음 배포하는 방법은 docs/DEPLOYMENT.md를 보세요.
+# app 이름은 Fly.io 전체에서 유일해야 하므로 만들 때 정한 이름으로 바꾸세요.
+app = "novapouch"
+primary_region = "nrt"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8787"
+  DATA_DIR = "/data"
+  TRUST_PROXY = "1"
+
+# 세계 기록·신고·이벤트 로그가 저장되는 볼륨
+[[mounts]]
+  source = "novapouch_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8787
+  force_https = true
+  # 방 상태가 메모리에 있으므로 서버를 재우지 않고 한 대만 돌린다
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    grace_period = "15s"
+    interval = "30s"
+    method = "GET"
+    timeout = "5s"
+    path = "/api/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

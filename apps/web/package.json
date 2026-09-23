@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc -p .",
-    "e2e": "playwright test"
+    "e2e": "pnpm -w build && playwright test"
   },
   "dependencies": {
     "@fontsource/noto-sans-kr": "^5.1.1",

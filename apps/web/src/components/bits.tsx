@@ -2,6 +2,7 @@ import type { Token } from '@novapouch/content';
 import type { GameView } from '@novapouch/game-core';
 import type { ReactNode } from 'react';
 import { avatarColor, formatSeconds, useRemaining } from '../lib/hooks';
+import { useConfig } from '../lib/config';
 import { navigate } from '../lib/router';
 import { useRoom } from '../lib/room';
 import { Icon } from './Icon';
@@ -47,6 +48,7 @@ export function Timer({ deadlineAt, label = '남은 시간' }: { deadlineAt: num
 }
 
 export function TopBar({ crumb, right, onBack }: { crumb: string; right?: ReactNode; onBack?: () => void }) {
+  const brand = useConfig((s) => s.brand);
   return (
     <header className="topbar">
       <div className="topbar__left">
@@ -63,7 +65,7 @@ export function TopBar({ crumb, right, onBack }: { crumb: string; right?: ReactN
             navigate('/');
           }}
         >
-          NOVA POUCH
+          {brand}
         </a>
         <span className="crumb">{crumb}</span>
       </div>

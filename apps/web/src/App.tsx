@@ -1,5 +1,9 @@
+import { useEffect } from 'react';
 import { Toasts, TopBar } from './components/bits';
+import { useConfig } from './lib/config';
+import { connectSocket } from './lib/room';
 import { useRoute, navigate } from './lib/router';
+import { AccessGate } from './screens/AccessGate';
 import { Home } from './screens/Home';
 import { Nebula } from './screens/Nebula';
 import { Room } from './screens/Room';
@@ -7,6 +11,20 @@ import { WorldPage } from './screens/WorldPage';
 
 export function App() {
   const route = useRoute();
+  const { loaded, accessRequired, accessOk, error, refresh } = useConfig();
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    if (loaded && (!accessRequired || accessOk)) connectSocket();
+  }, [loaded, accessRequired, accessOk]);
+
+  if (!loaded) return null;
+  if (error) return <p className="page banner">{error}</p>;
+  if (accessRequired && !accessOk) return <AccessGate />;
+
   return (
     <>
       {route.name === 'home' ? <Home /> : null}

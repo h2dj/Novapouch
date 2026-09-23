@@ -10,6 +10,9 @@ const { app } = await buildApp({
   dataDir: process.env.DATA_DIR ?? resolve(here, '../../../.data'),
   webDist: process.env.WEB_DIST ?? resolve(here, '../../web/dist'),
   logger: true,
+  brand: process.env.APP_BRAND,
+  accessCode: process.env.ACCESS_CODE,
+  trustProxy: process.env.TRUST_PROXY === '1',
 });
 
 await app.listen({ port, host });

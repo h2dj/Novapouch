@@ -1,5 +1,8 @@
+import { timingSafeEqual } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import helmet from '@fastify/helmet';
+import rateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import { GameError } from '@novapouch/game-core';
 import Fastify from 'fastify';
@@ -12,6 +15,25 @@ export interface AppOptions {
   webDist?: string;
   logger?: boolean;
   clock?: () => number;
+  /** 화면에 보일 서비스 이름. 외부 공개 때는 가칭을 넣는다 */
+  brand?: string;
+  /** 설정하면 이 코드를 아는 사람만 들어올 수 있다 (내부 테스트용) */
+  accessCode?: string;
+  /** 프록시 뒤에서 실제 접속 주소를 읽는다 (Fly.io 등) */
+  trustProxy?: boolean;
+}
+
+export const DEFAULT_BRAND = 'NOVA POUCH';
+
+/** 소켓 하나가 짧은 시간에 보낼 수 있는 이벤트 수 */
+const SOCKET_BURST = 40;
+const SOCKET_WINDOW_MS = 10_000;
+
+function sameSecret(given: unknown, expected: string): boolean {
+  if (typeof given !== 'string') return false;
+  const a = Buffer.from(given);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
 }
 
 type Ack = (res: { ok: true; playerId?: string } | { ok: false; error: string }) => void;
@@ -19,9 +41,36 @@ type Ack = (res: { ok: true; playerId?: string } | { ok: false; error: string })
 const roomChannel = (code: string, playerId: string) => `${code}:${playerId}`;
 
 export async function buildApp(opts: AppOptions) {
-  const app = Fastify({ logger: opts.logger ?? false });
+  const app = Fastify({ logger: opts.logger ?? false, trustProxy: opts.trustProxy ?? false });
   const store = new FileStore(opts.dataDir);
-  const io = new Server(app.server, { cors: { origin: true }, pingInterval: 10_000, pingTimeout: 8_000 });
+  const brand = opts.brand?.trim() || DEFAULT_BRAND;
+  const accessCode = opts.accessCode?.trim() || null;
+  // 화면과 서버가 같은 주소에서 나가므로 다른 출처의 소켓 연결은 받지 않는다
+  const io = new Server(app.server, { pingInterval: 10_000, pingTimeout: 8_000, maxHttpBufferSize: 16_000 });
+
+  await app.register(helmet, {
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:', 'blob:'],
+        fontSrc: ["'self'", 'data:'],
+        connectSrc: ["'self'", 'ws:', 'wss:'],
+        objectSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+        upgradeInsecureRequests: null,
+      },
+    },
+    crossOriginEmbedderPolicy: false,
+  });
+  // 내부 테스트 단계에서는 검색에 노출하지 않는다
+  app.addHook('onSend', async (_req, reply) => {
+    reply.header('x-robots-tag', 'noindex, nofollow');
+  });
+  await app.register(rateLimit, { global: false });
+
+  const allowed = (headers: Record<string, unknown>) => !accessCode || sameSecret(headers['x-access-code'], accessCode);
 
   const rooms = new RoomManager(
     store,
@@ -40,11 +89,24 @@ export async function buildApp(opts: AppOptions) {
 
   // --- REST -----------------------------------------------------------------
 
-  app.get('/api/health', async () => ({ ok: true }));
+  // 서버가 다시 시작되면 진행 중인 게임이 사라지므로 배포 전에 activeGames를 확인한다
+  app.get('/api/health', async () => ({ ok: true, activeGames: rooms.activeGames() }));
 
-  app.post('/api/rooms', async () => ({ code: rooms.create() }));
+  app.get('/api/config', async (req) => ({ brand, accessRequired: Boolean(accessCode), accessOk: allowed(req.headers) }));
 
-  app.get<{ Params: { code: string } }>('/api/rooms/:code', async (req, reply) => {
+  app.get('/robots.txt', async (_req, reply) => reply.type('text/plain').send('User-agent: *\nDisallow: /\n'));
+
+  // 접근 코드가 필요한 API는 코드가 맞을 때만 연다
+  app.addHook('onRequest', async (req, reply) => {
+    const open = ['/api/health', '/api/config'];
+    if (req.url.startsWith('/api/') && !open.includes(req.url.split('?')[0]!) && !allowed(req.headers)) {
+      return reply.code(401).send({ error: '접근 코드를 확인해 주세요.' });
+    }
+  });
+
+  app.post('/api/rooms', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async () => ({ code: rooms.create() }));
+
+  app.get<{ Params: { code: string } }>('/api/rooms/:code', { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, async (req, reply) => {
     const info = rooms.info(req.params.code);
     if (!info) return reply.code(404).send({ error: '방을 찾지 못했어요. 초대 코드를 확인해 주세요.' });
     return info;
@@ -84,10 +146,26 @@ export async function buildApp(opts: AppOptions) {
 
   // --- 실시간 ---------------------------------------------------------------
 
+  io.use((socket, next) => {
+    if (!accessCode || sameSecret(socket.handshake.auth?.accessCode, accessCode)) return next();
+    next(new Error('접근 코드를 확인해 주세요.'));
+  });
+
   io.on('connection', (socket) => {
     let joined: { code: string; playerId: string } | null = null;
+    let windowStart = Date.now();
+    let count = 0;
 
     const guard = (fn: () => void, ack?: Ack) => {
+      const t = Date.now();
+      if (t - windowStart > SOCKET_WINDOW_MS) {
+        windowStart = t;
+        count = 0;
+      }
+      if (++count > SOCKET_BURST) {
+        ack?.({ ok: false, error: '너무 빠르게 보내고 있어요. 잠시 후 다시 시도해 주세요.' });
+        return;
+      }
       try {
         fn();
         ack?.({ ok: true, playerId: joined?.playerId });
@@ -142,5 +220,5 @@ export async function buildApp(opts: AppOptions) {
     });
   });
 
-  return { app, io, rooms, store };
+  return { app, io, rooms, store, brand };
 }
