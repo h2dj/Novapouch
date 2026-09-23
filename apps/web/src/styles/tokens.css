@@ -1,0 +1,48 @@
+/* 디자인 시안에서 추출한 토큰 (docs/DEVELOPMENT_PLAN.md §8) */
+:root {
+  --bg-deep: #050a12;
+  --bg: #0a1220;
+  --bg-raised: #0d1727;
+  --surface-1: #18263d;
+  --surface-2: #20304a;
+  --line: #32445f;
+  --text: #e9eef6;
+  --text-muted: #aebbd0;
+  --glow-teal: #78c7c5;
+  --glow-violet: #a995d6;
+  --lavender: #d8cdf2;
+  --mist-blue: #7fa6c9;
+  --gold: #e6c890;
+  --rose: #e19a9a;
+  --on-accent: #0a1220;
+
+  --teal-wash: rgba(120, 199, 197, 0.1);
+  --violet-wash: rgba(169, 149, 214, 0.1);
+  --gold-wash: rgba(230, 200, 144, 0.1);
+  --rose-wash: rgba(225, 154, 154, 0.12);
+
+  --font: 'Noto Sans KR', system-ui, -apple-system, sans-serif;
+  --fs-display: 28px;
+  --fs-title: 20px;
+  --fs-body: 16px;
+  --fs-caption: 13px;
+
+  --radius-s: 10px;
+  --radius-m: 14px;
+  --radius-l: 20px;
+  --tap: 44px;
+  --gutter: 16px;
+
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --slow: 700ms;
+}
+
+@media (min-width: 960px) {
+  :root {
+    --fs-display: 40px;
+    --fs-title: 26px;
+    --fs-body: 18px;
+    --fs-caption: 14px;
+    --gutter: 40px;
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "novapouch",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @novapouch/server --filter @novapouch/web dev",
+    "build": "pnpm --filter @novapouch/web build",
+    "start": "pnpm --filter @novapouch/server start",
+    "test": "pnpm -r --if-present test",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "e2e": "pnpm --filter @novapouch/web e2e"
+  }
+}
