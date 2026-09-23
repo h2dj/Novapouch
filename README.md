@@ -56,8 +56,10 @@ PORT=8787 DATA_DIR=/var/lib/novapouch pnpm start
 
 ```bash
 docker build -t novapouch .
-docker run -p 8787:8787 -v novapouch-data:/data novapouch
+docker run -p 8787:8787 -v novapouch-data:/data -e ACCESS_CODE=원하는-코드 novapouch
 ```
+
+서버 설정은 [`.env.example`](.env.example), Fly.io 배포와 자동 배포, 백업·운영 방법은 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)에 있습니다. 내부 테스트 서버에는 `ACCESS_CODE`를 꼭 설정하세요.
 
 ## 검사
 

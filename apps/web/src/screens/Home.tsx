@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Icon } from '../components/Icon';
 import { api } from '../lib/api';
+import { DEFAULT_BRAND, useConfig } from '../lib/config';
 import { usePrefs } from '../lib/prefs';
 import { navigate } from '../lib/router';
 import { PouchArt } from '../components/Pouch';
@@ -10,6 +11,7 @@ export function Home() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { motion, setMotion } = usePrefs();
+  const brand = useConfig((s) => s.brand);
 
   const create = async () => {
     setBusy(true);
@@ -41,7 +43,7 @@ export function Home() {
       <div className="home__bg" aria-hidden="true" />
       <div className="page">
         <header className="topbar">
-          <span className="brand">NOVA POUCH</span>
+          <span className="brand">{brand}</span>
           <nav aria-label="주요 메뉴" className="row" style={{ gap: 4 }}>
             <a className="btn btn--ghost" href="/nebula" onClick={(e) => (e.preventDefault(), navigate('/nebula'))}>
               성운 기록
@@ -112,7 +114,8 @@ export function Home() {
         </main>
 
         <footer className="row wrap caption" style={{ justifyContent: 'space-between', gap: 12 }}>
-          <span>내부 독서모임용 프로토타입 · 김초엽 「비구름을 따라서」의 상상 놀이에서 출발했어요</span>
+          {/* 작품 이름은 정식 협업 전까지 내부 빌드에서만 보인다 */}
+          <span>{brand === DEFAULT_BRAND ? '내부 독서모임용 프로토타입 · 김초엽 「비구름을 따라서」의 상상 놀이에서 출발했어요' : '함께 상상하는 협력형 스토리 게임'}</span>
           <label className="row" style={{ gap: 8, minHeight: 44, cursor: 'pointer' }}>
             <input
               type="checkbox"

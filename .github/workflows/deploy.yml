@@ -1,0 +1,82 @@
+name: Deploy
+
+# main의 CI가 통과하면 이미지를 GHCR에 올리고, 설정돼 있으면 Fly.io에 배포한다.
+# 자동 배포는 저장소 변수 AUTO_DEPLOY=true 와 시크릿 FLY_API_TOKEN 이 있을 때만 켜진다.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 진행 중인 게임이 있어도 배포하기
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  image:
+    name: 이미지 게시 (GHCR)
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      sha: ${{ steps.sha.outputs.sha }}
+    steps:
+      - id: sha
+        run: echo "sha=${{ github.event.workflow_run.head_sha || github.sha }}" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.sha.outputs.sha }}
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: name
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.name.outputs.image }}:latest
+            ${{ steps.name.outputs.image }}:${{ steps.sha.outputs.sha }}
+
+  fly:
+    name: Fly.io 배포
+    needs: image
+    if: vars.AUTO_DEPLOY == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      APP_URL: ${{ vars.APP_URL }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.image.outputs.sha }}
+      - name: 설정 확인
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "::notice::FLY_API_TOKEN 시크릿이 없어 배포를 건너뜁니다. docs/DEPLOYMENT.md를 보세요."
+            echo "skip=1" >> "$GITHUB_ENV"
+          fi
+      - name: 진행 중인 게임 확인
+        if: env.skip != '1' && env.APP_URL != '' && inputs.force != true
+        run: |
+          active=$(curl -fsS "$APP_URL/api/health" | jq -r '.activeGames // 0' || echo 0)
+          if [ "$active" != "0" ]; then
+            echo "::warning::진행 중인 게임이 ${active}개 있어 배포를 미룹니다. 끝난 뒤 Deploy 워크플로를 수동으로 실행하세요."
+            echo "skip=1" >> "$GITHUB_ENV"
+          fi
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+        if: env.skip != '1'
+      - name: 배포
+        if: env.skip != '1'
+        run: flyctl deploy --remote-only

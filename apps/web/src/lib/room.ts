@@ -1,6 +1,7 @@
 import type { GameView } from '@novapouch/game-core';
 import { io, type Socket } from 'socket.io-client';
 import { create } from 'zustand';
+import { accessCode, useConfig } from './config';
 import { deviceToken, nickname as savedNickname } from './storage';
 
 type Ack = { ok: true; playerId?: string } | { ok: false; error: string };
@@ -36,7 +37,15 @@ let toastId = 0;
 
 function getSocket(): Socket {
   if (socket) return socket;
-  socket = io({ transports: ['websocket', 'polling'], reconnectionDelayMax: 4000 });
+  socket = io({
+    transports: ['websocket', 'polling'],
+    reconnectionDelayMax: 4000,
+    // 연결할 때마다 저장된 접근 코드를 다시 읽는다
+    auth: (cb) => cb({ accessCode: accessCode() }),
+  });
+  socket.on('connect_error', (err) => {
+    if (err.message.includes('접근 코드')) void useConfig.getState().refresh();
+  });
   socket.on('snapshot', (view: GameView) => {
     const { view: prev } = useRoom.getState();
     if (prev && prev.code === view.code && view.seq < prev.seq) return;
@@ -120,5 +129,6 @@ export const useRoom = create<RoomStore>((set, get) => ({
 }));
 
 export function connectSocket() {
-  getSocket();
+  const s = getSocket();
+  if (!s.connected) s.connect();
 }

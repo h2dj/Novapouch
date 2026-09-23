@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Avatar, TopBar } from '../components/bits';
 import { Icon } from '../components/Icon';
 import { useRoom } from '../lib/room';
+import { inviteLink, useConfig } from '../lib/config';
 import { navigate } from '../lib/router';
 
 export function Lobby({ view }: { view: GameView }) {
@@ -10,14 +11,15 @@ export function Lobby({ view }: { view: GameView }) {
   const [busy, setBusy] = useState(false);
   const isHost = view.hostId === view.you;
   const present = view.players.filter((p) => p.connected).length;
-  const link = `${location.origin}/r/${view.code}`;
+  const link = inviteLink(view.code);
+  const brand = useConfig((s) => s.brand);
   const minutes = Math.round((60 + 30 * view.settings.rounds + view.settings.rounds * view.settings.answerSeconds * 0.8 + 270 + 120) / 60);
   const order = [...view.players].sort((a, b) => a.joinedAt - b.joinedAt);
 
   const copy = async (text: string, what: string) => {
     try {
       if (navigator.share && /Mobi/.test(navigator.userAgent) && what === '링크') {
-        await navigator.share({ title: 'NOVA POUCH 초대', text: `초대 코드 ${view.code}`, url: link });
+        await navigator.share({ title: `${brand} 초대`, text: `초대 코드 ${view.code}`, url: link });
         return;
       }
       await navigator.clipboard.writeText(text);

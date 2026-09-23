@@ -231,3 +231,40 @@ describe('metrics', () => {
     expect(m.flaggedAnswers).toBe(1);
   });
 });
+
+describe('deployment settings', () => {
+  it('asks for the access code on the API and sockets, and serves the brand', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'novapouch-access-'));
+    const { app } = await buildApp({ dataDir: dir, accessCode: 'reading-club', brand: '빗방울 파우치' });
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    const addr = app.server.address();
+    const url = `http://127.0.0.1:${typeof addr === 'object' && addr ? addr.port : 0}`;
+    try {
+      const config = await (await fetch(`${url}/api/config`)).json();
+      expect(config).toEqual({ brand: '빗방울 파우치', accessRequired: true, accessOk: false });
+      expect(await (await fetch(`${url}/api/health`)).json()).toEqual({ ok: true, activeGames: 0 });
+      expect((await fetch(`${url}/api/rooms`, { method: 'POST' })).status).toBe(401);
+      const ok = await fetch(`${url}/api/rooms`, { method: 'POST', headers: { 'x-access-code': 'reading-club' } });
+      expect(ok.status).toBe(200);
+      expect(ok.headers.get('x-robots-tag')).toBe('noindex, nofollow');
+      expect(ok.headers.get('content-security-policy')).toContain("default-src 'self'");
+
+      const refused = connect(url, { transports: ['websocket'], forceNew: true, auth: { accessCode: 'wrong' } });
+      const err = await new Promise<Error>((resolve) => refused.on('connect_error', resolve));
+      expect(err.message).toContain('접근 코드');
+      refused.disconnect();
+
+      const accepted = connect(url, { transports: ['websocket'], forceNew: true, auth: { accessCode: 'reading-club' } });
+      await new Promise<void>((resolve) => accepted.on('connect', () => resolve()));
+      accepted.disconnect();
+    } finally {
+      await app.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('limits how many rooms one address can open', async () => {
+    const codes = await Promise.all(Array.from({ length: 21 }, () => fetch(`${base}/api/rooms`, { method: 'POST' }).then((r) => r.status)));
+    expect(codes.filter((c) => c === 429).length).toBeGreaterThan(0);
+  });
+});

@@ -185,6 +185,16 @@ export class RoomManager {
     }
   }
 
+  /** 누군가 접속해 있고 진행 중인 게임 수. 배포 전에 확인한다 */
+  activeGames(): number {
+    let n = 0;
+    for (const room of this.rooms.values()) {
+      const s = room.state;
+      if (s.phase !== 'LOBBY' && s.phase !== 'DONE' && s.players.some((p) => p.connected)) n += 1;
+    }
+    return n;
+  }
+
   state(code: string): GameState | undefined {
     return this.rooms.get(code)?.state;
   }
