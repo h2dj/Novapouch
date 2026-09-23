@@ -67,6 +67,8 @@ pnpm test         # 규칙·콘텐츠 단위 테스트, 소켓 통합 테스트
 pnpm e2e          # Playwright: 세 사람이 한 판을 끝까지 진행 (운영 빌드 기준)
 ```
 
+GitHub Actions(`.github/workflows/ci.yml`)가 모든 PR과 `main` 푸시에서 타입 검사·테스트·빌드, E2E, Docker 이미지 빌드와 기동 확인을 실행합니다. E2E 단계 화면은 실행 결과의 `e2e-screenshots` 아티팩트로 7일간 남습니다.
+
 E2E에 쓸 Chromium 경로를 바꾸려면 `CHROMIUM_PATH`를 지정하세요. `SCREENSHOT_DIR`을 주면 단계별 화면을 저장합니다.
 
 ## 운영 테스트 지표
