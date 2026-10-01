@@ -95,7 +95,13 @@ docker run -d --name novapouch --restart unless-stopped \
   ghcr.io/h2dj/novapouch:latest
 ```
 
-GHCR 패키지가 비공개라면 먼저 `docker login ghcr.io`가 필요합니다. Render는 영구 디스크가 유료 요금제에서만 되므로, 무료로 시험할 때는 Fly.io를 권합니다.
+GHCR 패키지가 비공개라면 먼저 `docker login ghcr.io`가 필요합니다.
+
+### 비용과 다른 선택지
+
+Fly.io 공식 가격표 기준으로 `shared-cpu-1x` 512MB 서버 한 대는 한 달 약 3.19달러, 볼륨은 GB당 한 달 0.15달러입니다(1GB면 합계 약 3.3달러). 신규 가입자에게 무료 사용량이 있는지는 가입 시점의 [가격 안내](https://fly.io/docs/about/pricing/)에서 확인하세요.
+
+Fly.io에는 서울 리전이 없어 가장 가까운 도쿄(nrt)를 씁니다. 지연이 문제가 되면 서울 리전이 있는 클라우드 VM(AWS Lightsail, 네이버 클라우드 등)에 위의 `docker run`으로 올리는 방법이 있습니다. Railway처럼 볼륨을 지원하는 컨테이너 호스팅도 같은 이미지로 쓸 수 있습니다. 어느 쪽이든 **서버 한 대, 영구 저장소, WebSocket 지원** 세 가지만 지키면 됩니다.
 
 ## 배포 전 확인 목록
 
