@@ -177,9 +177,9 @@
 
 ## 9. 세션이 끝난 뒤
 
-1. **데이터 백업** (`docs/DEPLOYMENT.md` 운영 절)
-2. **지표 확인**: `fly ssh console -C "sh -c 'cd /app/apps/server && DATA_DIR=/data pnpm metrics'"`. 완주율, 한 판 중앙값, 기여 균형, 연결 행동, 선택지 비율, 신고·숨김 수를 결과 요약에 옮긴다
-3. **신고 기록 확인**: `/data/reports.jsonl`에 협조자 문장 신고가 1건 들어왔는지
+1. **데이터 백업** (EC2: `sudo /opt/novapouch/backup.sh`, Fly.io: `docs/DEPLOYMENT.md` 운영 절)
+2. **지표 확인**: EC2는 Session Manager로 접속해 `cd /opt/novapouch && sudo docker compose exec app sh -c 'cd /app/apps/server && pnpm metrics'`, Fly.io는 `fly ssh console -C "sh -c 'cd /app/apps/server && DATA_DIR=/data pnpm metrics'"`. 완주율, 한 판 중앙값, 기여 균형, 연결 행동, 선택지 비율, 신고·숨김 수를 결과 요약에 옮긴다
+3. **신고 기록 확인**: 데이터 폴더(EC2 `/opt/novapouch/data`, Fly.io `/data`)의 `reports.jsonl`에 협조자 문장 신고가 1건 들어왔는지
 4. **문제 기록 정리**: 아래 양식으로 하나씩 적고 심각도를 매긴다
 
 ```
