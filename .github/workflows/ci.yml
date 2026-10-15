@@ -62,9 +62,34 @@ jobs:
       - name: 컨테이너 기동 확인
         run: |
           docker run -d --name np -p 8787:8787 novapouch:ci
-          for i in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             curl -fs http://localhost:8787/api/health && exit 0
             sleep 1
           done
           docker logs np
           exit 1
+      - name: EC2 구성(Compose + Caddy)으로 기동 확인
+        working-directory: deploy/aws/files
+        run: |
+          docker rm -f np
+          printf 'DOMAIN=:80\nACCESS_CODE=ci-code\nAPP_BRAND=\nBACKUP_BUCKET=\n' > .env
+          IMAGE=novapouch:ci docker compose up -d
+          ok=""
+          for _ in $(seq 1 30); do
+            if curl -fs http://localhost/api/health; then ok=1; break; fi
+            sleep 1
+          done
+          [ -n "$ok" ] || { docker compose logs; exit 1; }
+          # 접근 코드가 .env에서 들어가고, Caddy가 /socket.io 경로를 넘기는지 확인한다
+          curl -fs http://localhost/api/config | grep -q '"accessRequired":true'
+          curl -fs "http://localhost/socket.io/?EIO=4&transport=polling" | grep -q '"sid"'
+          docker compose down
+
+  deploy-config:
+    name: 배포 설정 검사
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: shellcheck deploy/aws/files/*.sh
+      - run: pip install cfn-lint && cfn-lint deploy/aws/cloudformation.yaml

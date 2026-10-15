@@ -1,6 +1,6 @@
 # 배포 안내
 
-내부 독서모임 테스트용으로 **서버 한 대**에 배포하는 방법입니다. 기본 대상은 Fly.io이고, Docker가 돌아가는 곳이면 어디든 같은 이미지를 쓸 수 있습니다.
+내부 독서모임 테스트용으로 **서버 한 대**에 배포하는 방법입니다. 이 문서는 Fly.io 기준이고, **AWS EC2(서울)로 배포한다면 [`DEPLOY_EC2.md`](DEPLOY_EC2.md)** 를 보세요. 아래 '먼저 알아 둘 점'과 환경 변수는 어느 곳에 배포하든 같습니다.
 
 ## 먼저 알아 둘 점
 
@@ -58,7 +58,8 @@ curl https://novapouch.fly.dev/api/health   # {"ok":true,"activeGames":0}
 | 종류 | 이름 | 값 |
 |---|---|---|
 | Secret | `FLY_API_TOKEN` | `fly tokens create deploy -x 999999h` 로 만든 토큰 |
-| Variable | `AUTO_DEPLOY` | `true` |
+| Variable | `DEPLOY_TARGET` | `fly` |
+| Variable | `AUTO_DEPLOY` | `true` (main 병합마다 자동 배포. 수동으로만 하려면 넣지 않음) |
 | Variable | `APP_URL` | `https://novapouch.fly.dev` (배포 전 진행 중인 게임 확인용) |
 
 `APP_URL`을 설정하면 배포 직전에 `/api/health`의 `activeGames`를 확인하고, 진행 중인 게임이 있으면 배포를 미룹니다. 모임이 끝난 뒤 **Actions → Deploy → Run workflow**로 직접 실행하면 됩니다. 급할 때는 `force`를 켜서 바로 배포할 수 있습니다.

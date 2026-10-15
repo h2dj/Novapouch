@@ -59,7 +59,7 @@ docker build -t novapouch .
 docker run -p 8787:8787 -v novapouch-data:/data -e ACCESS_CODE=원하는-코드 novapouch
 ```
 
-서버 설정은 [`.env.example`](.env.example), Fly.io 배포와 자동 배포, 백업·운영 방법은 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)에 있습니다. 실제 휴대폰으로 진행하는 운영 테스트는 [`docs/PLAYTEST_SCRIPT.md`](docs/PLAYTEST_SCRIPT.md) 대본을 따르세요. 내부 테스트 서버에는 `ACCESS_CODE`를 꼭 설정하세요.
+서버 설정은 [`.env.example`](.env.example)에 있습니다. AWS EC2(서울) 배포는 [`docs/DEPLOY_EC2.md`](docs/DEPLOY_EC2.md), Fly.io 배포는 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)를 보세요. 두 문서 모두 자동 배포와 백업·운영 방법을 담고 있습니다. 실제 휴대폰으로 진행하는 운영 테스트는 [`docs/PLAYTEST_SCRIPT.md`](docs/PLAYTEST_SCRIPT.md) 대본을 따르세요. 내부 테스트 서버에는 `ACCESS_CODE`를 꼭 설정하세요.
 
 ## 검사
 

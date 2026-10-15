@@ -1,0 +1,242 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Nova Pouch game server on a single EC2 instance (Ubuntu 24.04, Docker, Caddy HTTPS),
+  with an Elastic IP, an S3 backup bucket, SSM access instead of SSH, and an optional
+  GitHub Actions deploy role. See docs/DEPLOY_EC2.md.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label: { default: Game server }
+        Parameters: [DomainName, AccessCode, AppBrand, InstanceType]
+      - Label: { default: Access }
+        Parameters: [SshCidr, KeyName]
+      - Label: { default: GitHub Actions deploy }
+        Parameters: [GitHubRepository, CreateGitHubOidcProvider]
+      - Label: { default: Advanced }
+        Parameters: [UbuntuAmi, BootstrapUrl]
+
+Parameters:
+  DomainName:
+    Type: String
+    Default: ''
+    Description: >-
+      Domain for HTTPS (e.g. play.example.com). Leave empty to start with plain HTTP on
+      the public IP, then set DOMAIN in /opt/novapouch/.env once DNS points here.
+    AllowedPattern: '^$|^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$'
+  AccessCode:
+    Type: String
+    NoEcho: true
+    MinLength: 4
+    Description: Code players need to enter (invite links carry it). Letters, digits, . _ - only.
+    AllowedPattern: '^[A-Za-z0-9._-]{4,64}$'
+  AppBrand:
+    Type: String
+    Default: ''
+    Description: Working title shown instead of NOVA POUCH. Leave empty for internal tests.
+    AllowedPattern: "^[^'\"\\\\$`]{0,40}$"
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    AllowedValues: [t3.micro, t3.small, t3.medium]
+    Description: t3.micro (1GB + 2GB swap) is enough for a few reading groups.
+  SshCidr:
+    Type: String
+    Default: ''
+    Description: >-
+      Optional. Your IP in CIDR form (e.g. 203.0.113.5/32) to allow SSH. Leave empty and use
+      Session Manager instead.
+    AllowedPattern: '^$|^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$'
+  KeyName:
+    Type: String
+    Default: ''
+    Description: Optional EC2 key pair name for SSH.
+  GitHubRepository:
+    Type: String
+    Default: h2dj/Novapouch
+    Description: owner/repo allowed to deploy from its main branch. Leave empty to skip the deploy role.
+  CreateGitHubOidcProvider:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: Set to false if this AWS account already has the token.actions.githubusercontent.com OIDC provider.
+  UbuntuAmi:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id
+  BootstrapUrl:
+    Type: String
+    Default: https://raw.githubusercontent.com/h2dj/Novapouch/main/deploy/aws/files/bootstrap.sh
+
+Conditions:
+  HasDomain: !Not [!Equals [!Ref DomainName, '']]
+  HasSsh: !Not [!Equals [!Ref SshCidr, '']]
+  HasKey: !Not [!Equals [!Ref KeyName, '']]
+  HasDeployRole: !Not [!Equals [!Ref GitHubRepository, '']]
+  CreateOidc: !And [!Condition HasDeployRole, !Equals [!Ref CreateGitHubOidcProvider, 'true']]
+
+Resources:
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Nova Pouch web (HTTP/HTTPS) and optional SSH
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 80, ToPort: 80, CidrIp: 0.0.0.0/0 }
+        - { IpProtocol: tcp, FromPort: 80, ToPort: 80, CidrIpv6: '::/0' }
+        - { IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0 }
+        - { IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIpv6: '::/0' }
+        - { IpProtocol: udp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0 }
+        - !If
+          - HasSsh
+          - { IpProtocol: tcp, FromPort: 22, ToPort: 22, CidrIp: !Ref SshCidr }
+          - !Ref AWS::NoValue
+      Tags:
+        - { Key: Name, Value: !Sub '${AWS::StackName}-web' }
+
+  BackupBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      VersioningConfiguration: { Status: Enabled }
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-old-backups
+            Status: Enabled
+            Prefix: backups/
+            ExpirationInDays: 90
+            NoncurrentVersionExpiration: { NoncurrentDays: 30 }
+
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ec2.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        # Session Manager로 접속하고, GitHub Actions가 Run Command로 업데이트한다
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: backup-upload
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub '${BackupBucket.Arn}/backups/*'
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [!Ref InstanceRole]
+
+  Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref UbuntuAmi
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref InstanceProfile
+      SecurityGroupIds: [!GetAtt SecurityGroup.GroupId]
+      KeyName: !If [HasKey, !Ref KeyName, !Ref AWS::NoValue]
+      MetadataOptions:
+        HttpTokens: required
+        HttpEndpoint: enabled
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeType: gp3
+            VolumeSize: 20
+            Encrypted: true
+            DeleteOnTermination: true
+      Tags:
+        - { Key: Name, Value: !Ref AWS::StackName }
+      UserData:
+        Fn::Base64: !Sub
+          - |
+            #!/bin/bash
+            set -euxo pipefail
+            exec > >(tee /var/log/novapouch-bootstrap.log) 2>&1
+            curl -fsSL '${BootstrapUrl}' -o /root/novapouch-bootstrap.sh
+            DOMAIN='${Domain}' ACCESS_CODE='${AccessCode}' APP_BRAND='${AppBrand}' BACKUP_BUCKET='${BackupBucket}' \
+              bash /root/novapouch-bootstrap.sh
+          - Domain: !If [HasDomain, !Ref DomainName, ':80']
+
+  ElasticIp:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      InstanceId: !Ref Instance
+      Tags:
+        - { Key: Name, Value: !Ref AWS::StackName }
+
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: CreateOidc
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+      ThumbprintList:
+        - 6938fd4d98bab03faadb97b34396831e3780aea1
+        - 1c58a3a8518e8759bf075b76b750d4f2df264fcd
+
+  DeployRole:
+    Type: AWS::IAM::Role
+    Condition: HasDeployRole
+    Properties:
+      Description: GitHub Actions on main runs /opt/novapouch/update.sh through SSM Run Command
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If
+                - CreateOidc
+                - !Ref GitHubOidcProvider
+                - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com'
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub 'repo:${GitHubRepository}:ref:refs/heads/main'
+      Policies:
+        - PolicyName: run-update
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ssm:SendCommand
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/${Instance}'
+                  - !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}::document/AWS-RunShellScript'
+              - Effect: Allow
+                Action: [ssm:GetCommandInvocation, ssm:ListCommandInvocations]
+                Resource: '*'
+
+Outputs:
+  PublicIp:
+    Description: Point your domain's A record here
+    Value: !Ref ElasticIp
+  Url:
+    Value: !If [HasDomain, !Sub 'https://${DomainName}', !Sub 'http://${ElasticIp}']
+  InstanceId:
+    Description: GitHub variable EC2_INSTANCE_ID
+    Value: !Ref Instance
+  DeployRoleArn:
+    Condition: HasDeployRole
+    Description: GitHub variable AWS_DEPLOY_ROLE_ARN
+    Value: !GetAtt DeployRole.Arn
+  BackupBucketName:
+    Value: !Ref BackupBucket
+  SessionManager:
+    Description: Open a shell on the server without SSH
+    Value: !Sub 'aws ssm start-session --target ${Instance} --region ${AWS::Region}'
